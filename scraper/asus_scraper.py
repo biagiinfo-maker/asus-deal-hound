@@ -20,7 +20,7 @@ from playwright.sync_api import sync_playwright, TimeoutError
 
 # --- CONFIGURACIÓN ---
 ASUS_URL = "https://www.asus.com/us/deals/displays-desktops/"
-OUTPUT_FILE = "public/products.json"
+OUTPUT_FILE = "products.json"
 HEADLESS_MODE = True  # Cambia a False para ver el navegador en acción
 
 # --- NOTIFICACIONES (Opcional) ---
