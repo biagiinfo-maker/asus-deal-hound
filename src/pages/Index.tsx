@@ -6,25 +6,93 @@ import { ImportExportDialog } from '@/components/ImportExportDialog';
 import { TelegramConfigDialog } from '@/components/TelegramConfigDialog';
 import { FilterBar } from '@/components/FilterBar';
 import { Button } from '@/components/ui/button';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Zap } from 'lucide-react';
+import { toast } from '@/components/ui/sonner'; // Añade esta línea
 
 const Index = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
+  const [isScraping, setIsScraping] = useState(false);
 
   useEffect(() => {
-    loadProducts();
-  }, []);
-
-  const loadProducts = () => {
-    setProducts(storage.getProducts());
+  const fetchProducts = async () => {
+    try {
+      // Pide al servidor el archivo que está en la carpeta 'public'
+      const response = await fetch('/products.json');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      setProducts(data);
+    } catch (error) {
+      console.error("No se pudo cargar 'products.json'. ¿Ejecutaste el script?", error);
+      // Como respaldo, intentamos cargar desde el almacenamiento local
+      setProducts(storage.getProducts());
+    }
   };
+  
+  fetchProducts();
+}, []);
+
+  const loadProducts = async () => {
+  try {
+    // Añade un timestamp para evitar que el navegador use una versión en caché del archivo
+    const response = await fetch(`/products.json?v=${new Date().getTime()}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    setProducts(data);
+  } catch (error) {
+    console.error("No se pudo recargar 'products.json'.", error);
+  }
+};
 
   const handleDelete = (id: string) => {
-    storage.deleteProduct(id);
-    loadProducts();
-  };
+  // Elimina el producto del almacenamiento local (opcional pero bueno mantenerlo)
+  storage.deleteProduct(id);
+  
+  // Actualiza el estado local para remover el producto de la vista inmediatamente
+  setProducts(currentProducts => currentProducts.filter(p => p.id !== id));
+
+  toast.success('Producto eliminado de la vista actual.');
+};
+
+  const handleRunScraper = async () => {
+  setIsScraping(true);
+  toast.info('Iniciando el scraper...', {
+    description: 'Buscando nuevas ofertas en la web de ASUS.',
+  });
+
+  try {
+    const response = await fetch('http://localhost:3001/run-scraper', {
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      throw new Error('La respuesta del servidor no fue exitosa.');
+    }
+
+    await response.json();
+    toast.success('¡Scraper completado!', {
+      description: 'Actualizando la lista de productos...',
+    });
+
+    // Esperamos un segundo y recargamos los productos
+    setTimeout(() => {
+      loadProducts();
+    }, 1000);
+
+  } catch (error) {
+    console.error("Error al ejecutar el scraper:", error);
+    toast.error('Error al ejecutar el scraper', {
+      description: 'Asegúrate de que el servidor backend esté en ejecución.',
+    });
+  } finally {
+    setIsScraping(false);
+  }
+};
 
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -58,11 +126,20 @@ const Index = () => {
             <div className="flex gap-2 flex-wrap">
               <TelegramConfigDialog />
               <ImportExportDialog />
-              <Button onClick={loadProducts} variant="outline">
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Recargar
-              </Button>
-            </div>
+              <Button onClick={handleRunScraper} disabled={isScraping}>
+    {isScraping ? (
+      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+    ) : (
+      <Zap className="mr-2 h-4 w-4" />
+    )}
+    {isScraping ? 'Buscando...' : 'Buscar Ofertas'}
+  </Button>
+
+  <Button onClick={() => loadProducts()} variant="outline">
+    <RefreshCw className="mr-2 h-4 w-4" />
+    Recargar
+  </Button>
+</div>
           </div>
         </div>
       </header>
