@@ -18,9 +18,10 @@ import time
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 import uuid
+import re
 
-# Configuración
-ASUS_URL = "https://shop.asus.com/us/all-in-one-pcs"
+# --- 1. URL ACTUALIZADA ---
+ASUS_URL = "https://www.asus.com/us/deals/displays-desktops/"
 OUTPUT_FILE = "products.json"
 TELEGRAM_BOT_TOKEN = ""  # Opcional: tu bot token de Telegram
 TELEGRAM_CHAT_ID = ""     # Opcional: tu chat ID
@@ -73,65 +74,65 @@ def scrape_asus_products():
             page.goto(ASUS_URL, wait_until='networkidle', timeout=60000)
             
             # Esperar a que los productos se carguen
-            time.sleep(3)
+            time.sleep(5) # Aumentamos un poco la espera por si acaso
             
             # Scroll para cargar lazy-loaded content
+            print("📜 Haciendo scroll para cargar todos los productos...")
+            page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+            time.sleep(3)
             page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
             time.sleep(2)
             
             print("🔎 Extrayendo productos...")
             
-            # Selector de productos (ajustar según la estructura real)
-            product_cards = page.query_selector_all('.product-item, [data-testid="product-card"], .product-card')
+            # --- 2. NUEVOS SELECTORES ---
+            # Selector principal para cada tarjeta de producto
+            product_cards = page.query_selector_all('[class*="ProductCardNormalGrid__productCardContainer__"]')
             
             if not product_cards:
-                print("⚠️ No se encontraron productos. Ajusta los selectores.")
-                # Fallback: intentar con otros selectores comunes
-                product_cards = page.query_selector_all('article, .card, .item')
+                print("⚠️ No se encontraron productos. La estructura de la web puede haber cambiado.")
             
             print(f"📦 Encontrados {len(product_cards)} elementos")
             
             for card in product_cards:
                 try:
-                    # Extraer nombre
-                    name_elem = card.query_selector('h2, h3, .product-name, [class*="title"], a[class*="name"]')
+                    # Selector para el nombre
+                    name_elem = card.query_selector('h2')
                     if not name_elem:
                         continue
                     
-                    name = name_elem.inner_text().strip()
+                    name = name_elem.inner_html().replace('<br>', ' ').strip()
                     
-                    # Extraer URL
+                    # Selector para la URL (el primer enlace dentro de la tarjeta)
                     link_elem = card.query_selector('a')
                     url = link_elem.get_attribute('href') if link_elem else ASUS_URL
                     if url and not url.startswith('http'):
-                        url = f"https://shop.asus.com{url}"
-                    
-                    # Extraer precios
-                    price_text = card.query_selector('[class*="price"], .price, [class*="cost"]')
-                    if not price_text:
+                        base_url = "https://www.asus.com" if "asus.com" in ASUS_URL else "https://shop.asus.com"
+                        url = f"{base_url}{url}"
+
+                    # Selectores para los precios
+                    current_price_elem = card.query_selector('[class*="ProductCardNormalGrid__priceDiscount__"]')
+                    original_price_elem = card.query_selector('.regularPrice')
+
+                    current_price_text = current_price_elem.inner_text().strip() if current_price_elem else None
+                    original_price_text = original_price_elem.inner_text().strip() if original_price_elem else None
+
+                    if not current_price_text:
                         continue
-                    
-                    price_html = card.inner_html()
-                    
-                    # Buscar precio actual
-                    current_price = None
+
+                    # Extraer números de los precios
+                    current_price = float(re.sub(r'[^\d.]', '', current_price_text))
                     original_price = None
+                    if original_price_text:
+                        original_price = float(re.sub(r'[^\d.]', '', original_price_text))
+
+                    # Si no hay precio original explícito, el actual es el único
+                    if not original_price:
+                        original_price = current_price
                     
-                    # Extraer números de precios
-                    import re
-                    prices = re.findall(r'\$\s*(\d+(?:,\d{3})*(?:\.\d{2})?)', price_html)
-                    prices = [float(p.replace(',', '')) for p in prices]
-                    
-                    if len(prices) >= 2:
-                        # Hay descuento: precio actual (menor) y original (mayor)
-                        current_price = min(prices)
-                        original_price = max(prices)
-                    elif len(prices) == 1:
-                        current_price = prices[0]
-                    
-                    if not current_price:
-                        continue
-                    
+                    if original_price < current_price:
+                        original_price = current_price
+
                     discount = calculate_discount(current_price, original_price)
                     is_spectacular = discount >= 60
                     
@@ -140,7 +141,7 @@ def scrape_asus_products():
                         'name': name,
                         'url': url,
                         'currentPrice': current_price,
-                        'originalPrice': original_price,
+                        'originalPrice': original_price if original_price != current_price else None,
                         'discount': discount,
                         'isSpectacularDeal': is_spectacular,
                         'lastUpdated': datetime.now().isoformat(),
@@ -155,12 +156,11 @@ def scrape_asus_products():
                     products.append(product)
                     print(f"✓ {name} - ${current_price}" + (f" ({discount}% OFF)" if discount > 0 else ""))
                     
-                    # Enviar notificación si es oferta espectacular
                     if is_spectacular:
                         send_telegram_notification(product)
                     
                 except Exception as e:
-                    print(f"✗ Error procesando producto: {e}")
+                    print(f"✗ Error procesando un producto: {e}")
                     continue
             
         except Exception as e:
@@ -185,18 +185,14 @@ def main():
     print("🐕 ASUS Deal Hound - Scraper")
     print("=" * 50)
     
-    # Configurar Telegram (opcional)
     if not TELEGRAM_BOT_TOKEN:
-        print("\n⚠️ Telegram no configurado. Edita el script para añadir:")
-        print("   TELEGRAM_BOT_TOKEN = 'tu_token'")
-        print("   TELEGRAM_CHAT_ID = 'tu_chat_id'")
+        print("\n⚠️ Telegram no configurado. Edita el script para añadir tus credenciales.")
     
     products = scrape_asus_products()
     
     if products:
         save_products(products)
         
-        # Estadísticas
         spectacular = sum(1 for p in products if p['isSpectacularDeal'])
         avg_discount = sum(p['discount'] for p in products) / len(products) if products else 0
         
@@ -205,8 +201,7 @@ def main():
         print(f"   Ofertas espectaculares (>60%): {spectacular}")
         print(f"   Descuento promedio: {avg_discount:.2f}%")
     else:
-        print("\n⚠️ No se encontraron productos.")
-        print("💡 Consejo: Revisa los selectores CSS en el código")
+        print("\n⚠️ No se encontraron productos. Revisa los selectores CSS si la web cambió.")
 
 if __name__ == "__main__":
     main()
