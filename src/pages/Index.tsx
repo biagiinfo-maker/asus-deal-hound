@@ -6,12 +6,14 @@ import { ImportExportDialog } from '@/components/ImportExportDialog';
 import { TelegramConfigDialog } from '@/components/TelegramConfigDialog';
 import { FilterBar } from '@/components/FilterBar';
 import { Button } from '@/components/ui/button';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Zap } from 'lucide-react';
+import { toast } from '@/components/ui/sonner'; // Añade esta línea
 
 const Index = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
+  const [isScraping, setIsScraping] = useState(false);
 
   useEffect(() => {
   const fetchProducts = async () => {
@@ -52,6 +54,41 @@ const Index = () => {
     loadProducts();
   };
 
+  const handleRunScraper = async () => {
+  setIsScraping(true);
+  toast.info('Iniciando el scraper...', {
+    description: 'Buscando nuevas ofertas en la web de ASUS.',
+  });
+
+  try {
+    const response = await fetch('http://localhost:3001/run-scraper', {
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      throw new Error('La respuesta del servidor no fue exitosa.');
+    }
+
+    await response.json();
+    toast.success('¡Scraper completado!', {
+      description: 'Actualizando la lista de productos...',
+    });
+
+    // Esperamos un segundo y recargamos los productos
+    setTimeout(() => {
+      loadProducts();
+    }, 1000);
+
+  } catch (error) {
+    console.error("Error al ejecutar el scraper:", error);
+    toast.error('Error al ejecutar el scraper', {
+      description: 'Asegúrate de que el servidor backend esté en ejecución.',
+    });
+  } finally {
+    setIsScraping(false);
+  }
+};
+
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchTerm.toLowerCase());
     
@@ -84,11 +121,20 @@ const Index = () => {
             <div className="flex gap-2 flex-wrap">
               <TelegramConfigDialog />
               <ImportExportDialog />
-              <Button onClick={() => loadProducts()} variant="outline">
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Recargar
-              </Button>
-            </div>
+              <Button onClick={handleRunScraper} disabled={isScraping}>
+    {isScraping ? (
+      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+    ) : (
+      <Zap className="mr-2 h-4 w-4" />
+    )}
+    {isScraping ? 'Buscando...' : 'Buscar Ofertas'}
+  </Button>
+
+  <Button onClick={() => loadProducts()} variant="outline">
+    <RefreshCw className="mr-2 h-4 w-4" />
+    Recargar
+  </Button>
+</div>
           </div>
         </div>
       </header>
