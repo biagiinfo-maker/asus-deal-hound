@@ -50,14 +50,9 @@ const Index = () => {
 };
 
   const handleDelete = (id: string) => {
-  // Elimina el producto del almacenamiento local (opcional pero bueno mantenerlo)
-  storage.deleteProduct(id);
-  
-  // Actualiza el estado local para remover el producto de la vista inmediatamente
-  setProducts(currentProducts => currentProducts.filter(p => p.id !== id));
-
-  toast.success('Producto eliminado de la vista actual.');
-};
+    storage.deleteProduct(id);
+    loadProducts();
+  };
 
   const handleRunScraper = async () => {
   setIsScraping(true);
