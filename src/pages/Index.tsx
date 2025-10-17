@@ -14,12 +14,38 @@ const Index = () => {
   const [filterType, setFilterType] = useState('all');
 
   useEffect(() => {
-    loadProducts();
-  }, []);
-
-  const loadProducts = () => {
-    setProducts(storage.getProducts());
+  const fetchProducts = async () => {
+    try {
+      // Pide al servidor el archivo que está en la carpeta 'public'
+      const response = await fetch('/products.json');
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      setProducts(data);
+    } catch (error) {
+      console.error("No se pudo cargar 'products.json'. ¿Ejecutaste el script?", error);
+      // Como respaldo, intentamos cargar desde el almacenamiento local
+      setProducts(storage.getProducts());
+    }
   };
+  
+  fetchProducts();
+}, []);
+
+  const loadProducts = async () => {
+  try {
+    // Añade un timestamp para evitar que el navegador use una versión en caché del archivo
+    const response = await fetch(`/products.json?v=${new Date().getTime()}`);
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    setProducts(data);
+  } catch (error) {
+    console.error("No se pudo recargar 'products.json'.", error);
+  }
+};
 
   const handleDelete = (id: string) => {
     storage.deleteProduct(id);
@@ -58,7 +84,7 @@ const Index = () => {
             <div className="flex gap-2 flex-wrap">
               <TelegramConfigDialog />
               <ImportExportDialog />
-              <Button onClick={loadProducts} variant="outline">
+              <Button onClick={() => loadProducts()} variant="outline">
                 <RefreshCw className="mr-2 h-4 w-4" />
                 Recargar
               </Button>
